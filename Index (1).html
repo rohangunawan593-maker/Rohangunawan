@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Kamera Realtime Pro</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.0.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+<style>
+body{margin:0;font-family:Arial;background:#0f172a;color:#fff;text-align:center}
+header{background:#020617;padding:15px}
+video,canvas{max-width:95%;border-radius:10px;margin-top:10px}
+button{padding:10px;margin:5px;border:none;border-radius:10px;background:#22c55e;color:#fff}
+</style>
+</head>
+<body>
+
+<header>📱 AI Kamera Realtime PRO</header>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas><br>
+
+<button onclick="startCamera()">🎥 Start</button>
+<button onclick="stopCamera()">⛔ Stop</button>
+<button onclick="capture()">📸 Capture</button>
+
+<p id="status">Menunggu...</p>
+
+<script>
+const video=document.getElementById('video');
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+const statusText=document.getElementById('status');
+
+let model;
+let stream;
+let running=false;
+let trackedObjects=[];
+
+// load model
+cocoSsd.load({base:'lite_mobilenet_v2'}).then(m=>{
+ model=m;
+ statusText.innerText='✅ AI siap';
+});
+
+async function startCamera(){
+stream=await navigator.mediaDevices.getUserMedia({video:true});
+video.srcObject=stream;
+video.onloadedmetadata=()=>{
+ canvas.width=video.videoWidth;
+ canvas.height=video.videoHeight;
+ running=true;
+ detectFrame();
+}
+}
+
+function stopCamera(){
+running=false;
+if(stream) stream.getTracks().forEach(t=>t.stop());
+}
+
+// tracking sederhana (biar stabil)
+function matchObject(newObj){
+let found=trackedObjects.find(o=>Math.abs(o.x-newObj.x)<50 && Math.abs(o.y-newObj.y)<50);
+if(found){
+ found.x=newObj.x;
+ found.y=newObj.y;
+ return found.id;
+}else{
+ let id=Date.now();
+ trackedObjects.push({id,x:newObj.x,y:newObj.y});
+ return id;
+}
+}
+
+async function detectFrame(){
+if(!running) return;
+
+ctx.drawImage(video,0,0,canvas.width,canvas.height);
+
+const predictions=await model.detect(canvas);
+
+predictions.forEach(p=>{
+if(p.score>0.6 && (p.class==='car'||p.class==='motorcycle'||p.class==='bus'||p.class==='truck')){
+ let [x,y,w,h]=p.bbox;
+ let id=matchObject({x,y});
+
+ // highlight kendaraan
+ ctx.strokeStyle='red';
+ ctx.lineWidth=3;
+ ctx.strokeRect(x,y,w,h);
+ ctx.fillStyle='red';
+ ctx.fillText(p.class+' ID:'+id,x,y-5);
+
+ // ubah warna area (efek realtime)
+ let imgData=ctx.getImageData(x,y,w,h);
+ for(let i=0;i<imgData.data.length;i+=4){
+   imgData.data[i]=255; // merah
+ }
+ ctx.putImageData(imgData,x,y);
+}
+});
+
+requestAnimationFrame(detectFrame);
+}
+
+function capture(){
+let link=document.createElement('a');
+link.download='capture.png';
+link.href=canvas.toDataURL();
+link.click();
+}
+
+</script>
+
+</body>
+</html>
